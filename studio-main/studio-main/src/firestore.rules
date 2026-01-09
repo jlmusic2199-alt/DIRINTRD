@@ -1,0 +1,109 @@
+/**
+ * @file firestore.rules
+ * @description Security rules for the DIPRINT RD Tracker application.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isTheUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData(userId) {
+      // It's safer to provide a fallback or check existence before use
+      return get(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isAdmin() {
+      // An admin is a user with the role 'dueño'.
+      // Ensure the user document exists and has the correct role.
+      let userData = getUserData(request.auth.uid);
+      return isSignedIn() && userData.exists && userData.data.rol == 'dueño';
+    }
+    
+    function isUserInDepartment(departmentId) {
+      // Check if the current user belongs to a specific department.
+      let userData = getUserData(request.auth.uid);
+      return isSignedIn() && userData.exists && userData.data.departmentId == departmentId;
+    }
+    
+    function isDesignUser() {
+      // Checks if the user is in the 'Diseño/Atencion al cliente' department.
+      if (!isSignedIn()) { return false; }
+      let userData = getUserData(request.auth.uid);
+      if (!userData.exists || userData.data.departmentId == null) { return false; }
+      let departmentDoc = get(/databases/$(database)/documents/departments/$(userData.data.departmentId));
+      return departmentDoc.exists && departmentDoc.data.name == 'Diseño/Atencion al cliente';
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow get: if isAdmin() || isTheUser(userId);
+      allow list: if isAdmin();
+      
+      // A user can create ONLY their own user document.
+      // The content of the document is validated to ensure non-admins cannot make themselves admin
+      // and that the initial state is correct. The master admin email gets rol 'dueño' automatically.
+      allow create: if isTheUser(userId)
+                    && request.resource.data.departmentId == null
+                    && (request.auth.token.email == 'solutionsvillanueva@gmail.com' ? request.resource.data.rol == 'dueño' : request.resource.data.rol == 'empleado')
+                    && request.resource.data.id == userId
+                    && request.resource.data.createdAt == request.time;
+
+
+      // ONLY an Admin can update any user profile. Regular users cannot.
+      allow update: if isAdmin();
+      
+      allow delete: if isAdmin();
+    }
+
+    match /departments/{departmentId} {
+      // Anyone authenticated can read department names. This is needed for the UI.
+      allow read: if isSignedIn();
+      // Only admins can create, update, or delete departments.
+      allow write: if isAdmin();
+    }
+    
+    match /jobs/{jobId} {
+        // Allow public 'get' for specific client tracking links.
+        // But only allow authenticated users to 'list' all jobs (for the kanban board).
+        allow get: if true;
+        allow list: if isSignedIn();
+        
+        // Creation is restricted to admins or design users.
+        allow create: if isAdmin() || isDesignUser();
+        
+        // Updates are allowed for admins or the user in the job's current department.
+        // We use `resource.data.departmentId` which refers to the state of the document *before* the update.
+        allow update: if isAdmin() || isUserInDepartment(resource.data.departmentId);
+
+        // Deletion is restricted to admins.
+        allow delete: if isAdmin();
+
+        match /updates/{updateId} {
+            // Inherits read permission from parent, allowing public read for tracking.
+            allow get: if true;
+            allow list: if true;
+            
+            // Only admins or users in the job's current department can create updates.
+            // This is critical: we check the department of the PARENT job.
+            allow create: if isAdmin() || isUserInDepartment(get(/databases/$(database)/documents/jobs/$(jobId)).data.departmentId);
+
+            // Only admins can modify or delete the history.
+            allow update, delete: if isAdmin();
+        }
+    }
+  }
+}

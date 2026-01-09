@@ -1,0 +1,62 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------------------
+
+    function isSignedIn() {
+      // Rule to check if a user is signed in.
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      // An admin is a user with the role 'dueño'.
+      return isSignedIn() && getUserData().rol == 'dueño';
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+        // Allow signed-in users to read their own data, and admins to read anyone's data.
+        allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+        allow list: if isAdmin();
+        
+        // Only admins can update user profiles.
+        // Users can create their own profile, but this is handled by stricter rules in v2 of the rules.
+        allow write: if isAdmin();
+    }
+
+    match /departments/{departmentId} {
+      // Department names are not sensitive and can be read by anyone authenticated to structure the app.
+      // Writes are still protected for admins.
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    
+    match /jobs/{jobId} {
+        // Allow public read for any single job for client tracking links (get).
+        // Authenticated users can list all jobs for the kanban board.
+        allow get: if true;
+        allow list: if isSignedIn();
+
+        // Writes are protected for authenticated users. Specific logic is handled in the app.
+        allow write: if isSignedIn();
+
+        match /updates/{updateId} {
+            // Inherits read permission from parent, allowing public read for tracking.
+            // Writes are protected for authenticated users.
+            allow read: if true;
+            allow write: if isSignedIn();
+        }
+    }
+  }
+}

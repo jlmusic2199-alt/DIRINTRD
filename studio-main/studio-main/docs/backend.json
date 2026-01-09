@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user within the DIPRINT RD Tracker system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity (matches Firebase Auth UID)."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "rol": {
+          "type": "string",
+          "description": "Indicates the user's role.",
+          "enum": ["dueño", "empleado"]
+        },
+        "departmentId": {
+          "type": [ "string", "null" ],
+          "description": "Reference to Department. (Relationship: Department 1:N User). Assigned by an administrator."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the user profile was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "rol",
+        "createdAt"
+      ]
+    },
+    "Department": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Department",
+      "type": "object",
+      "description": "Represents a department within the DIPRINT RD organization.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Department entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the department."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the department's role."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Job": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Job",
+      "type": "object",
+      "description": "Represents a print job within the DIPRINT RD system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Job entity."
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Name of the client for this specific job."
+        },
+        "specifications": {
+          "type": "string",
+          "description": "Detailed specifications of the job."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the job, typically matching a Department name."
+        },
+        "priority": {
+          "type": "string",
+          "description": "The priority level of the job.",
+          "enum": [
+            "Urgente",
+            "Alta",
+            "Normal",
+            "Baja"
+          ]
+        },
+        "departmentId": {
+          "type": "string",
+          "description": "The ID of the department that currently 'owns' or is working on the job."
+        },
+        "approvalUrl": {
+          "type": ["string", "null"],
+          "description": "URL to the client's uploaded approval file.",
+          "format": "uri"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the job was created (entry date and time).",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "clientName",
+        "status",
+        "priority",
+        "departmentId",
+        "createdAt"
+      ]
+    },
+    "JobUpdate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JobUpdate",
+      "type": "object",
+      "description": "Represents an audit log entry or an event related to a job.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JobUpdate entity."
+        },
+        "jobId": {
+          "type": "string",
+          "description": "Reference to the Job entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "ID of the user who performed the action."
+        },
+        "departmentId": {
+          "type": "string",
+          "description": "Denormalized department ID from the user making the update for authorization."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of the update.",
+          "format": "date-time"
+        },
+        "comment": {
+          "type": "string",
+          "description": "Comment or description of the action taken."
+        },
+        "newStatus": {
+          "type": "string",
+          "description": "The new status of the job, if it was changed."
+        },
+        "newPriority": {
+          "type": "string",
+          "description": "The new priority of the job, if it was changed.",
+          "enum": [
+            "Urgente",
+            "Alta",
+            "Normal",
+            "Baja"
+          ]
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "URL to a file associated with this update (legacy, for one file).",
+          "format": "uri"
+        },
+        "fileUrls": {
+          "type": "array",
+          "description": "URLs to files associated with this update.",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "jobId",
+        "userId",
+        "departmentId",
+        "timestamp"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "google.com"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/entities/User"
+          },
+          "description": "Stores user profiles. The `rol` field determines access level ('dueño' or 'empleado'). `departmentId` is assigned by an Admin."
+        }
+      },
+      {
+        "path": "/departments/{departmentId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/entities/Department"
+          },
+          "description": "Stores department information. Managed by Admins, but readable by all authenticated users."
+        }
+      },
+      {
+        "path": "/jobs/{jobId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/entities/Job"
+          },
+          "description": "Stores individual job information. The `departmentId` field is used for access control."
+        }
+      },
+      {
+        "path": "/jobs/{jobId}/updates/{updateId}",
+        "definition": {
+          "schema": {
+            "$ref": "#/entities/JobUpdate"
+          },
+          "description": "Serves as the audit log ('audit_logs') for each job, recording all actions."
+        }
+      }
+    ]
+  }
+}
